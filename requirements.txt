@@ -1,0 +1,13 @@
+argparse
+transformers
+scikit-learn
+jupyter
+
+torch
+datasets
+setuptools
+matplotlib
+
+numpy
+tqdm
+nltk
