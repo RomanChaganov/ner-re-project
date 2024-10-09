@@ -29,13 +29,14 @@ def dict_to_device(
     return dict
 
 
-def draw_plots(loss_history: List[float], f1: List[float], f1_relation: List[float]):
+def draw_plots(loss_history: List[float], f1: List[float], f1_relation: List[float] = []):
     display.clear_output(wait=True)
 
     f, (ax1, ax2, ax3) = plt.subplots(3)
     f.set_figwidth(15)
     f.set_figheight(10)
 
+    
     ax1.set_title("training loss")
     ax2.set_title("f1 micro")
     ax3.set_title("f1 for class relation")
@@ -43,6 +44,9 @@ def draw_plots(loss_history: List[float], f1: List[float], f1_relation: List[flo
     ax1.plot(loss_history)
     ax2.plot(f1)
     ax3.plot(f1_relation)
+
+    if not f1_relation:
+        ax3.remove()
 
     plt.show()
 
