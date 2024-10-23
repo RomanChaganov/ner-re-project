@@ -6,7 +6,7 @@ import torch
 from IPython import display
 from matplotlib import pyplot as plt
 from sklearn.metrics import f1_score
-from torch.nn import CrossEntropyLoss, BCELoss
+from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -18,7 +18,6 @@ from models.bert_crf import BertCrf
 from models.re_bert_crf import ReBertCrf
 from re_utils.common import load_json
 from re_utils.ner import get_tags_with_positions, get_mean_vector_from_segment
-
 from focal_loss.focal_loss import FocalLoss
 
 
@@ -38,6 +37,7 @@ def draw_plots(loss_history: List[float], f1: List[float], f1_relation: List[flo
     f.set_figwidth(15)
     f.set_figheight(10)
 
+    
     ax1.set_title("training loss")
     ax2.set_title("f1 micro")
     ax3.set_title("f1 for class relation")
@@ -184,13 +184,12 @@ def train_re(
     test_gt_relations_dataset = GroundTruthRelationsDataset(relations_path=test_relations_path)
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, collate_fn=train_dataset.collate_function)
-
-    # weights = torch.FloatTensor([1, 1/100]).to(torch.device(device))
-    # criterion = BCELoss(weight=weights)
-    # criterion = CrossEntropyLoss()
+    
+    weights = torch.FloatTensor([1, 1/100]).to(torch.device(device))
+    # criterion = CrossEntropyLoss(weight=weights)
     criterion = FocalLoss(gamma=12)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)  # , weight_decay=1e-5
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     loss_history = []
     f1_history = []
@@ -207,9 +206,9 @@ def train_re(
 
             logits = model(batch["seq_embedding"], batch["entities_embeddings"], batch["entities_tags"])
 
-            softmax = torch.nn.Softmax(dim=-1)
-            loss = criterion(softmax(logits.flatten(end_dim=2)), relation_matrix_ground_truth.flatten())
-            # print(logits.flatten(end_dim=2), relation_matrix_ground_truth.flatten())
+            m = torch.nn.Softmax(dim=-1)
+            loss = criterion(m(logits.flatten(end_dim=2)), relation_matrix_ground_truth.flatten())
+            #print(logits.flatten(end_dim=2), relation_matrix_ground_truth.flatten())
             loss.backward()
 
             loss_history.append(loss.item())
@@ -279,16 +278,13 @@ def calc_f1_micro_and_f1_for_relation(
         true_positive_relation += torch.sum((gt_relation_matrix_on_ner == 0) & (relation_matrix_pred == 0)).item()
         false_negative_relation += torch.sum((gt_relation_matrix_on_ner == 0) & (relation_matrix_pred != 0)).item()
         false_positive_relation += torch.sum((gt_relation_matrix_on_ner != 0) & (relation_matrix_pred == 0)).item()
-
+        
         print(f'TP: {true_positive_relation}, FN: {false_negative_relation}, FP: {false_positive_relation}')
-        precision_relation = true_positive_relation / (true_positive_relation + false_positive_relation) if (
-                                                                                                                        true_positive_relation + false_positive_relation) > 0 else 0
-        recall_relation = true_positive_relation / (true_positive_relation + false_negative_relation) if (
-                                                                                                                     true_positive_relation + false_negative_relation) > 0 else 0
-
-        f1_relation = 2 * precision_relation * recall_relation / (precision_relation + recall_relation) if (
-                                                                                                                       precision_relation + recall_relation) > 0 else 0
-
+        precision_relation = true_positive_relation / (true_positive_relation + false_positive_relation) if (true_positive_relation + false_positive_relation) > 0 else 0
+        recall_relation = true_positive_relation / (true_positive_relation + false_negative_relation) if (true_positive_relation + false_negative_relation) > 0 else 0
+        
+        f1_relation = 2 * precision_relation * recall_relation / (precision_relation + recall_relation) if (precision_relation + recall_relation) > 0 else 0
+        
         # print(true_positive_relation+false_positive_relation, false_negative_relation+true_positive_relation, true_positive_relation)
 
         # -----------------------------------------------------------------------------------------
@@ -298,6 +294,7 @@ def calc_f1_micro_and_f1_for_relation(
         # else:
         #     precision += true_ans / nayden
 
+        
         # true_comm = (gt_relation_matrix_on_ner == 0).sum().item()
         # if true_comm == 0:
         #     recall = 0
