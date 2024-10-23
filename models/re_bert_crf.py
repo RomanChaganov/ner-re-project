@@ -3,7 +3,6 @@ import os
 import json
 import torch
 from torch import nn
-from torch._C import _nn
 from torch.utils.data import DataLoader
 from datasets.embeddings_and_relations_dataset import EmbeddingsAndRelationsDataset
 
@@ -22,27 +21,24 @@ class ReBertCrf(nn.Module):
         self.arg2_linear = self.__get_dropour_relu_linear(hidden_size, hidden_size, dropout)
         self.all_seq_linear = self.__get_dropour_relu_linear(hidden_size, hidden_size, dropout)
 
-        # self.GRU = nn.GRU(3 * hidden_size, 2 * hidden_size, batch_first=True)
-        # self.Conv2d = nn.Conv2d(3 * hidden_size, 2 * hidden_size, 7, padding='same')
-
         self.relation_classifier = nn.Sequential(
-                                                 nn.Linear(3 * hidden_size, int(2 * hidden_size)),
-                                                 nn.ReLU(),
+                                                nn.Linear(3 * hidden_size, 2 * hidden_size),
+                                                nn.ReLU(),
                                                 #  nn.LayerNorm(int(2 * hidden_size)), 
-                                                 nn.Dropout(dropout), 
+                                                nn.Dropout(dropout), 
                                              
                                                 #  nn.Linear(int(2.5 * hidden_size), 2 * hidden_size),
                                                 #  nn.ReLU(),
                                                 #  nn.LayerNorm(2 * hidden_size), 
                                                 #  nn.Dropout(dropout),
                                              
-                                                 nn.Linear(2 * hidden_size, hidden_size),
-                                                 nn.ReLU(),
+                                                nn.Linear(2 * hidden_size, hidden_size),
+                                                nn.ReLU(),
                                                 #  nn.LayerNorm(hidden_size),
-                                                 nn.Dropout(dropout),
+                                                nn.Dropout(dropout),
                                              
-                                                 nn.Linear(hidden_size, num_re_tags),
-                                                 )
+                                                nn.Linear(hidden_size, num_re_tags),
+        )
 
         self.tag_embeddings = nn.Embedding(num_embeddings=len(entity_tag_to_id), embedding_dim=hidden_size)
 
@@ -64,7 +60,6 @@ class ReBertCrf(nn.Module):
         entities_embeddings_as_arg1 += tag_embeddings
         entities_embeddings_as_arg2 += tag_embeddings
 
-        # print(entities_embeddings.shape, entities_embeddings_as_arg1.shape, entities_embeddings_as_arg2.shape)
         seq_embedding_matrix = seq_embedding.unsqueeze(1).unsqueeze(1).repeat(1, seq_len, seq_len, 1)
         grid_arg1_ind, grid_arg2_ind = torch.meshgrid(torch.arange(seq_len), torch.arange(seq_len))
         concatenated_embeddings = torch.cat(
@@ -75,17 +70,6 @@ class ReBertCrf(nn.Module):
             ),
             dim=-1,
         )
-
-        # print(concatenated_embeddings.shape)
-        # concatenated_embeddings_ax1 = concatenated_embeddings.shape[1]
-        # concatenated_embeddings = concatenated_embeddings.view(concatenated_embeddings.shape[0], 
-        #                                                        concatenated_embeddings.shape[1]*concatenated_embeddings.shape[1],
-        #                                                        concatenated_embeddings.shape[-1])
-        # concatenated_embeddings = torch.transpose(concatenated_embeddings, 1, 3)
-        # gru_out, _ = self.GRU(concatenated_embeddings)
-        # conv_out = self.Conv2d(concatenated_embeddings)
-        # gru_out = gru_out.view(gru_out.shape[0], concatenated_embeddings_ax1, concatenated_embeddings_ax1, gru_out.shape[-1])
-        
         predictions = self.relation_classifier(concatenated_embeddings)
         return predictions
 
