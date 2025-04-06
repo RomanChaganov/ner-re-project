@@ -279,7 +279,7 @@ def calc_f1_micro_and_f1_for_relation(
         false_negative_relation += torch.sum((gt_relation_matrix_on_ner == 0) & (relation_matrix_pred != 0)).item()
         false_positive_relation += torch.sum((gt_relation_matrix_on_ner != 0) & (relation_matrix_pred == 0)).item()
         
-        print(f'TP: {true_positive_relation}, FN: {false_negative_relation}, FP: {false_positive_relation}')
+        # print(f'TP: {true_positive_relation}, FN: {false_negative_relation}, FP: {false_positive_relation}')
         precision_relation = true_positive_relation / (true_positive_relation + false_positive_relation) if (true_positive_relation + false_positive_relation) > 0 else 0
         recall_relation = true_positive_relation / (true_positive_relation + false_negative_relation) if (true_positive_relation + false_negative_relation) > 0 else 0
         

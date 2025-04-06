@@ -26,6 +26,15 @@ FIRST_TOKEN_TAG_PREFIX = "B"
 SUBSEQUENT_TOKEN_TAG_PREFIX = "I"
 
 
+def normalize_bbox(bbox, width, height):
+    return [
+        int(1000 * (bbox[0] / width)),
+        int(1000 * (bbox[1] / height)),
+        int(1000 * (bbox[2] / width)),
+        int(1000 * (bbox[3] / height)),
+    ]
+
+
 def configure_arg_parser():
     arg_parser = ArgumentParser()
     arg_parser.add_argument(
@@ -37,7 +46,7 @@ def configure_arg_parser():
     arg_parser.add_argument(
         "--hf-tokenizer",
         type=str,
-        default="ai-forever/ruBert-base",
+        default="microsoft/layoutxlm-base",
         help="The name of the tokenizer with which to tokenize the text. "
         "This can be a tokenizer from the hf pub or a local path.",
     )
@@ -96,6 +105,11 @@ def main(args: Namespace):
             os.path.dirname(text_path),
             os.path.basename(text_path).split(".")[0] + ".ann",
         )
+
+        image_path = os.path.join(
+            os.path.dirname(text_path),
+            os.path.basename(text_path).split(".")[0] + "_1.png",
+        )
         ner_annotations = []
         re_annotations = []
 
@@ -109,23 +123,15 @@ def main(args: Namespace):
                         tag=annotation_data[1],
                         start_ch_pos=int(annotation_data[2]),
                         end_ch_pos=int(annotation_data[3]),
-                        phrase=" ".join(annotation_data[4:]),
+                        phrase=" ".join(annotation_data[4:-4]),
+                        bbox=[int(x) for x in eval(" ".join(annotation_data[-4:]))]
                     )
                     ner_annotations.append(ner_annotation)
-
-                    labels_set.add(f"{FIRST_TOKEN_TAG_PREFIX}-{ner_annotation.tag}")
-                    labels_set.add(f"{SUBSEQUENT_TOKEN_TAG_PREFIX}-{ner_annotation.tag}")
+                    if ner_annotation.tag != NOT_A_NAMED_ENTITY:
+                        labels_set.add(f"{FIRST_TOKEN_TAG_PREFIX}-{ner_annotation.tag}")
+                        labels_set.add(f"{SUBSEQUENT_TOKEN_TAG_PREFIX}-{ner_annotation.tag}")
                 else:
-                    annotation_id, tag, arg1, arg2 = annotation_data
-
-                    def get_arg_name(arg: str):
-                        return arg.split(":")[1]
-
-                    arg1 = get_arg_name(arg1)
-                    arg2 = get_arg_name(arg2)
-
-                    re_annotations.append(ReAnnotation(id=annotation_id, tag=tag, arg1=arg1, arg2=arg2))
-                    retags_set.add(tag)
+                    continue
 
         id2annotation = {ann.id: ann for ann in ner_annotations}
         tokenized_text_spans = list(WordPunctTokenizer().span_tokenize(text))
@@ -159,27 +165,55 @@ def main(args: Namespace):
 
         for annotation in id2annotation.values():
             assert annotation.start_word_pos != -1 and annotation.end_word_pos != -1
+        # words = [annotation.phrase for annotation in id2annotation.values()]
+        # bbox = [annotation.bbox for annotation in id2annotation.values()]
+        # i = 0
+        # # words = [text[span[0] : span[1]] for span in tokenized_text_spans]
+        # encoded = tokenizer(words, boxes=bbox, is_split_into_words=True, add_special_tokens=False)
+        # input_ids = encoded["input_ids"]
+        words = []
+        bbox = []
+        i = 0
+        for span in tokenized_text_spans:
+            flag = False
+            words.append(text[span[0]: span[1]])
+            # print(span[1])
+            for annotation in id2annotation.values():
+                if span[0] >= annotation.start_ch_pos and span[1] <= annotation.end_ch_pos:
+                    # print(text[span[0]: span[1]], annotation.bbox)
+                    bbox.append(annotation.bbox)
+                    flag = True
+                    i += 1
+                    break
+            if not flag:
+                bbox.append(bbox[-1])
+        encoded = tokenizer(words, boxes=bbox, is_split_into_words=True, add_special_tokens=False)
+        input_ids = encoded.input_ids
+        bbox = encoded.bbox
 
-        words = [text[span[0] : span[1]] for span in tokenized_text_spans]
-        encoded = tokenizer(words, is_split_into_words=True, add_special_tokens=False)
-        input_ids = encoded["input_ids"]
         words_ids_for_tokens = encoded.word_ids()
 
         for id in id2annotation.keys():
             id2annotation[id].start_token_pos = lower_bound(words_ids_for_tokens, id2annotation[id].start_word_pos)
             id2annotation[id].end_token_pos = upper_bound(words_ids_for_tokens, id2annotation[id].end_word_pos)
 
+        # bbox = [[0, 0, 0, 0]] * len(input_ids)
         text_labels = ["O"] * len(input_ids)
+
+
         for annotation in id2annotation.values():
-            text_labels[annotation.start_token_pos] = f"{FIRST_TOKEN_TAG_PREFIX}-{annotation.tag}"
+            text_labels[annotation.start_token_pos] = f"{FIRST_TOKEN_TAG_PREFIX}-{annotation.tag}" if annotation.tag != NOT_A_NAMED_ENTITY else f"{annotation.tag}"
+            bbox[annotation.start_token_pos] = annotation.bbox
             for i in range(annotation.start_token_pos + 1, annotation.end_token_pos):
-                text_labels[i] = f"{SUBSEQUENT_TOKEN_TAG_PREFIX}-{annotation.tag}"
+                text_labels[i] = f"{SUBSEQUENT_TOKEN_TAG_PREFIX}-{annotation.tag}" if annotation.tag != NOT_A_NAMED_ENTITY else f"{annotation.tag}"
+                bbox[i] = annotation.bbox
 
         labels_set.add(NOT_A_NAMED_ENTITY)
 
         current_seq_ids = []
         current_seq_labels = []
-        dump = {"input_ids": [], "text_labels": [], "labels": []}
+        current_seq_bbox = []
+        dump = {"input_ids": [], "text_labels": [], "labels": [], "bbox": []}
         total_token_dumped = 0
 
         relations_count = 0
@@ -193,11 +227,14 @@ def main(args: Namespace):
             if is_new_word and is_not_subseq_label:
                 dump["input_ids"].extend(current_seq_ids.copy())
                 dump["text_labels"].extend(current_seq_labels.copy())
+                dump["bbox"].extend(current_seq_bbox.copy())
                 current_seq_ids.clear()
                 current_seq_labels.clear()
+                current_seq_bbox.clear()
 
             current_seq_ids.append(input_ids[token_ind])
             current_seq_labels.append(text_labels[token_ind])
+            current_seq_bbox.append(bbox[token_ind])
             dump_relations = {"id": text_id, "relations": []}
             if len(current_seq_ids) + len(dump["input_ids"]) > args.max_seq_len:
                 for re_annotation in re_annotations:
@@ -236,11 +273,13 @@ def main(args: Namespace):
                 zeros_count = args.max_seq_len - len(dump['input_ids'])
                 dump['input_ids'] += [0] * zeros_count
                 dump['text_labels'] += ['O'] * zeros_count
-                dump["id"] = text_id
+                dump['bbox'] += [[0, 0, 0, 0]] * zeros_count
+                dump['id'] = text_id
+                dump['original_image'] = image_path
                 tokenized_texts.append(copy.deepcopy(dump))
                 total_token_dumped += len(dump["input_ids"])
                 text_id += 1
-                for key in ["input_ids", "labels", "text_labels"]:
+                for key in ["input_ids", "labels", "text_labels", "bbox"]:
                     dump[key].clear()
 
                 skipped_relations += len(re_annotations) - relations_count
@@ -271,11 +310,13 @@ def main(args: Namespace):
                     zeros_count = args.max_seq_len - len(dump['input_ids'])
                     dump['input_ids'] += [0] * zeros_count
                     dump['text_labels'] += ['O'] * zeros_count
-                    dump["id"] = text_id
+                    dump['bbox'] += [[0, 0, 0, 0]] * zeros_count
+                    dump['id'] = text_id
+                    dump['original_image'] = image_path
                     tokenized_texts.append(copy.deepcopy(dump))
                     total_token_dumped += len(dump["input_ids"])
                     text_id += 1
-                    for key in ["input_ids", "labels", "text_labels"]:
+                    for key in ["input_ids", "labels", "text_labels", "bbox"]:
                         dump[key].clear()
 
                     skipped_relations += len(re_annotations) - relations_count

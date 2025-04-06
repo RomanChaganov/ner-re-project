@@ -10,6 +10,7 @@ class NerAnnotation:
     start_ch_pos: int
     end_ch_pos: int
     phrase: str
+    bbox: list[int]
 
     start_word_pos: int = -1
     end_word_pos: int = -1

@@ -2,12 +2,12 @@ argparse
 transformers
 scikit-learn
 jupyter
-
+seqeval
 torch
 datasets
 setuptools
 matplotlib
-
+focal_loss_torch
 numpy
 tqdm
 nltk

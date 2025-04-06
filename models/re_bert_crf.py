@@ -22,22 +22,22 @@ class ReBertCrf(nn.Module):
         self.all_seq_linear = self.__get_dropour_relu_linear(hidden_size, hidden_size, dropout)
 
         self.relation_classifier = nn.Sequential(
-                                                nn.Linear(3 * hidden_size, 2 * hidden_size),
-                                                nn.ReLU(),
-                                                #  nn.LayerNorm(int(2 * hidden_size)), 
-                                                nn.Dropout(dropout), 
-                                             
-                                                #  nn.Linear(int(2.5 * hidden_size), 2 * hidden_size),
-                                                #  nn.ReLU(),
-                                                #  nn.LayerNorm(2 * hidden_size), 
-                                                #  nn.Dropout(dropout),
-                                             
-                                                nn.Linear(2 * hidden_size, hidden_size),
-                                                nn.ReLU(),
-                                                #  nn.LayerNorm(hidden_size),
-                                                nn.Dropout(dropout),
-                                             
-                                                nn.Linear(hidden_size, num_re_tags),
+            nn.Linear(3 * hidden_size, 4 * hidden_size),
+            # nn.LayerNorm(2 * hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+
+            nn.Linear(4 * hidden_size, 4 * hidden_size),
+            # nn.LayerNorm(4 * hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+
+            nn.Linear(4 * hidden_size, 4 * hidden_size),
+            # nn.LayerNorm(hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+
+            nn.Linear(4 * hidden_size, num_re_tags),
         )
 
         self.tag_embeddings = nn.Embedding(num_embeddings=len(entity_tag_to_id), embedding_dim=hidden_size)
